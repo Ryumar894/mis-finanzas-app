@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --- CÓDIGO DE RESCATE --- */
+/* Esto fuerza a la app a ocupar toda la pantalla y elimina los márgenes extraños */
+:root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  min-height: 100vh;
+  display: block; /* Esto mata el "display: flex" que trae Vite por defecto */
+  background-color: #f8fafc; /* Color de fondo Slate-50 para que no se vea blanco puro */
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0;
+  text-align: left; /* Asegura que el texto no se centre solo */
+}
