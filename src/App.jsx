@@ -122,7 +122,7 @@ const LoginScreen = ({ onLogin }) => {
         e.preventDefault();
         if (lockoutTime) return; // Si está bloqueado, no hacer nada
 
-        if (pin === '2026') { 
+        if (pin === '2008') { 
             onLogin();
         } else {
             const newAttempts = attempts + 1;
