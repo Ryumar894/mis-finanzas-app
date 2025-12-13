@@ -77,10 +77,59 @@ const Badge = ({ children, type }) => {
     );
 };
 
+// --- PANTALLA DE BLOQUEO (LOGIN SIMPLE) ---
+const LoginScreen = ({ onLogin }) => {
+    const [pin, setPin] = useState('');
+    const [error, setError] = useState(false);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        // --- AQUÍ DEFINE TU CLAVE SECRETA ---
+        if (pin === '2008') { 
+            onLogin();
+        } else {
+            setError(true);
+            setPin('');
+        }
+    };
+
+    return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+            <Card className="w-full max-w-sm text-center space-y-6 py-10">
+                <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto text-4xl">
+                    🔒
+                </div>
+                <div>
+                    <h2 className="text-2xl font-bold text-slate-800">Acceso Restringido</h2>
+                    <p className="text-slate-500 text-sm mt-2">Ingresa tu PIN de seguridad</p>
+                </div>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <input 
+                        type="password" 
+                        inputMode="numeric" 
+                        className="w-full text-center text-3xl tracking-[1em] font-bold p-3 border-b-2 border-gray-300 focus:border-indigo-600 outline-none bg-transparent transition-colors"
+                        placeholder="••••"
+                        maxLength={4}
+                        value={pin}
+                        onChange={(e) => { setPin(e.target.value); setError(false); }}
+                        autoFocus
+                    />
+                    {error && <p className="text-red-500 text-sm font-medium">PIN Incorrecto</p>}
+                    <Button type="submit" className="w-full">Entrar</Button>
+                </form>
+            </Card>
+        </div>
+    );
+};
+
 // --- APP PRINCIPAL ---
 
 export default function App() {
-    // Estados
+    // Estado de Autenticación
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [loadingAuth, setLoadingAuth] = useState(true);
+
+    // Estados de Datos
     const [transactions, setTransactions] = useState([]);
     const [goals, setGoals] = useState([]);
     const [upcomingPayments, setUpcomingPayments] = useState([]); 
@@ -88,66 +137,60 @@ export default function App() {
 
     const [newTransaction, setNewTransaction] = useState({ type: 'variable', amount: '', description: '' });
     const [newGoal, setNewGoal] = useState({ name: '', targetAmount: '', initialAmount: '' });
-    // ACTUALIZADO: Agregamos 'date' al estado del nuevo pago
     const [newPayment, setNewPayment] = useState({ name: '', amount: '', date: '' }); 
     const [activeTab, setActiveTab] = useState('dashboard');
 
-    // --- ESCUCHAR FIREBASE ---
-    
-    // 1. Transacciones
+    // Verificar si ya inició sesión antes (localStorage)
     useEffect(() => {
-        const q = query(collection(db, "transactions"), orderBy("createdAt", "desc"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setTransactions(docs);
-        });
-        return () => unsubscribe();
+        const loggedIn = localStorage.getItem('finance_app_auth');
+        if (loggedIn === 'true') {
+            setIsAuthenticated(true);
+        }
+        setLoadingAuth(false);
     }, []);
 
-    // 2. Metas
-    useEffect(() => {
-        const q = query(collection(db, "goals"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setGoals(docs);
-        });
-        return () => unsubscribe();
-    }, []);
+    const handleLogin = () => {
+        localStorage.setItem('finance_app_auth', 'true');
+        setIsAuthenticated(true);
+    };
 
-    // 3. Pagos Pendientes (ACTUALIZADO: Ordenar por fecha de vencimiento)
-    useEffect(() => {
-        // Ordenamos por "date" ascendente (la fecha más antigua/próxima primero)
-        const q = query(collection(db, "upcoming_payments"), orderBy("date", "asc"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setUpcomingPayments(docs);
-        });
-        return () => unsubscribe();
-    }, []);
+    const handleLogout = () => {
+        if(confirm("¿Cerrar sesión?")) {
+            localStorage.removeItem('finance_app_auth');
+            setIsAuthenticated(false);
+        }
+    };
 
-    // 4. Deuda Interna
+    // --- ESCUCHAR FIREBASE (Solo si está autenticado) ---
     useEffect(() => {
+        if (!isAuthenticated) return;
+
+        const q1 = query(collection(db, "transactions"), orderBy("createdAt", "desc"));
+        const unsub1 = onSnapshot(q1, (snap) => setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        const q2 = query(collection(db, "goals"));
+        const unsub2 = onSnapshot(q2, (snap) => setGoals(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        const q3 = query(collection(db, "upcoming_payments"), orderBy("date", "asc"));
+        const unsub3 = onSnapshot(q3, (snap) => setUpcomingPayments(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
         const docRef = doc(db, "financialData", "general");
-        const unsubscribe = onSnapshot(docRef, (docSnap) => {
-            if (docSnap.exists()) {
-                setInternalDebt(docSnap.data().internalDebt || 0);
-            } else {
-                setDoc(docRef, { internalDebt: 0 });
-            }
+        const unsub4 = onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) setInternalDebt(docSnap.data().internalDebt || 0);
+            else setDoc(docRef, { internalDebt: 0 });
         });
-        return () => unsubscribe();
-    }, []);
+
+        return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+    }, [isAuthenticated]);
 
     // Cálculos
     const totalIncome = transactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
     const totalExpenses = transactions.filter(t => ['variable', 'fixed'].includes(t.type)).reduce((acc, curr) => acc + curr.amount, 0);
     const totalSavingsInGoals = goals.reduce((acc, curr) => acc + curr.currentAmount, 0);
     const currentBalance = totalIncome - totalExpenses - totalSavingsInGoals;
-    
     const totalPendingPayments = upcomingPayments.reduce((acc, curr) => acc + curr.amount, 0);
 
-    // --- FUNCIONES ---
-
+    // --- FUNCIONES CRUD ---
     const handleAddTransaction = async (e) => {
         e.preventDefault();
         if (!newTransaction.amount || !newTransaction.description) return;
@@ -163,18 +206,14 @@ export default function App() {
         } catch (error) { console.error("Error:", error); }
     };
 
-    // ACTUALIZADO: Agregar Pago Pendiente con FECHA
     const handleAddUpcomingPayment = async (e) => {
         e.preventDefault();
-        if (!newPayment.name || !newPayment.amount || !newPayment.date) {
-            alert("Por favor completa todos los campos, incluida la fecha.");
-            return;
-        }
+        if (!newPayment.name || !newPayment.amount || !newPayment.date) { alert("Completa todos los campos"); return; }
         try {
             await addDoc(collection(db, "upcoming_payments"), {
                 name: newPayment.name,
                 amount: parseFloat(newPayment.amount),
-                date: newPayment.date, // Guardamos la fecha de vencimiento
+                date: newPayment.date,
                 createdAt: new Date()
             });
             setNewPayment({ name: '', amount: '', date: '' });
@@ -182,41 +221,25 @@ export default function App() {
     };
 
     const handlePayUpcomingPayment = async (payment) => {
-        if (!confirm(`¿Confirmar pago de ${payment.name} por $${payment.amount}?`)) return;
-
+        if (!confirm(`¿Pagar ${payment.name}?`)) return;
         try {
             await addDoc(collection(db, "transactions"), {
-                type: 'fixed', 
-                amount: payment.amount,
-                description: payment.name, 
-                date: new Date().toISOString().split('T')[0],
-                createdAt: new Date()
+                type: 'fixed', amount: payment.amount, description: payment.name, date: new Date().toISOString().split('T')[0], createdAt: new Date()
             });
-
             await deleteDoc(doc(db, "upcoming_payments", payment.id));
-
-        } catch (error) { console.error("Error al pagar:", error); }
+        } catch (error) { console.error("Error:", error); }
     };
 
-    const handleDeleteUpcomingPayment = async (id) => {
-        if (confirm("¿Eliminar este recordatorio?")) {
-            await deleteDoc(doc(db, "upcoming_payments", id));
-        }
-    };
+    const handleDeleteUpcomingPayment = async (id) => { if (confirm("¿Eliminar?")) await deleteDoc(doc(db, "upcoming_payments", id)); };
 
     const handleAddGoal = async (e) => {
         e.preventDefault();
         if (!newGoal.name || !newGoal.targetAmount) return;
         const initial = parseFloat(newGoal.initialAmount) || 0;
-        const balanceRedondeado = parseFloat(currentBalance.toFixed(2));
-        if (initial > balanceRedondeado) { alert("No tienes suficiente saldo disponible."); return; }
+        const bal = parseFloat(currentBalance.toFixed(2));
+        if (initial > bal) { alert("Saldo insuficiente"); return; }
         try {
-            await addDoc(collection(db, "goals"), {
-                name: newGoal.name,
-                targetAmount: parseFloat(newGoal.targetAmount),
-                currentAmount: initial,
-                createdAt: new Date()
-            });
+            await addDoc(collection(db, "goals"), { name: newGoal.name, targetAmount: parseFloat(newGoal.targetAmount), currentAmount: initial, createdAt: new Date() });
             setNewGoal({ name: '', targetAmount: '', initialAmount: '' });
         } catch (error) { console.error(error); }
     };
@@ -224,12 +247,9 @@ export default function App() {
     const handleAddFundsToGoal = async (goalId, amount, currentAmount) => {
         const val = parseFloat(amount);
         if (isNaN(val) || val <= 0) return;
-        const balanceRedondeado = parseFloat(currentBalance.toFixed(2));
-        if (val > balanceRedondeado) { alert(`Saldo insuficiente (Tienes $${balanceRedondeado})`); return; }
-        try {
-            const goalRef = doc(db, "goals", goalId);
-            await updateDoc(goalRef, { currentAmount: currentAmount + val });
-        } catch (error) { console.error(error); }
+        const bal = parseFloat(currentBalance.toFixed(2));
+        if (val > bal) { alert(`Saldo insuficiente (Tienes $${bal})`); return; }
+        try { await updateDoc(doc(db, "goals", goalId), { currentAmount: currentAmount + val }); } catch (error) { console.error(error); }
     };
 
     const handleAutoLoan = async (goalId, amount, currentGoalAmount) => {
@@ -237,39 +257,50 @@ export default function App() {
         if (isNaN(val) || val <= 0) return;
         if (val > currentGoalAmount) { alert("No puedes retirar más de lo que tienes."); return; }
         try {
-            const goalRef = doc(db, "goals", goalId);
-            await updateDoc(goalRef, { currentAmount: currentGoalAmount - val });
-            const debtRef = doc(db, "financialData", "general");
-            await updateDoc(debtRef, { internalDebt: internalDebt + val });
+            await updateDoc(doc(db, "goals", goalId), { currentAmount: currentGoalAmount - val });
+            await updateDoc(doc(db, "financialData", "general"), { internalDebt: internalDebt + val });
         } catch (error) { console.error(error); }
+    };
+
+    const formatDateShort = (dateString) => {
+        if (!dateString) return '';
+        const date = new Date(dateString + 'T00:00:00'); 
+        return date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
     };
 
     const inputStyle = "w-full rounded-lg border-gray-300 border p-2 focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900";
 
-    // Función auxiliar para formatear fecha (Ej: 2025-05-20 -> 20 May)
-    const formatDateShort = (dateString) => {
-        if (!dateString) return '';
-        const date = new Date(dateString + 'T00:00:00'); // T00... evita problemas de zona horaria
-        return date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
-    };
+    // --- RENDERIZADO CONDICIONAL ---
+    if (loadingAuth) return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Cargando...</div>;
+    if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 md:p-8 w-full">
             <div className="w-full max-w-7xl mx-auto space-y-8">
                 
-                {/* Header */}
+                {/* Header con Logout */}
                 <header className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                    <div>
-                        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
-                            Finanzas Personales <span className="text-xs text-gray-400 font-normal ml-2">(En la Nube ☁️)</span>
-                        </h1>
-                        <p className="text-slate-500 mt-1">Sincronizado en tiempo real</p>
+                    <div className="flex items-center gap-4">
+                        <div>
+                            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
+                                Finanzas Personales
+                            </h1>
+                            <p className="text-slate-500 mt-1 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                En línea
+                            </p>
+                        </div>
                     </div>
-                    <div className="mt-4 md:mt-0 text-right">
-                        <p className="text-sm text-slate-500">Saldo Disponible</p>
-                        <p className={`text-3xl font-bold ${currentBalance < 0 ? 'text-red-500' : 'text-emerald-600'}`}>
-                            ${currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </p>
+                    <div className="mt-4 md:mt-0 flex items-center gap-6">
+                        <div className="text-right">
+                            <p className="text-sm text-slate-500">Saldo Disponible</p>
+                            <p className={`text-3xl font-bold ${currentBalance < 0 ? 'text-red-500' : 'text-emerald-600'}`}>
+                                ${currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </p>
+                        </div>
+                        <button onClick={handleLogout} className="text-gray-400 hover:text-red-500 transition-colors" title="Salir">
+                            <span className="text-xl">🚪</span>
+                        </button>
                     </div>
                 </header>
 
@@ -300,13 +331,7 @@ export default function App() {
                 {/* Navegación */}
                 <div className="flex gap-2 border-b border-gray-200 pb-1">
                     {['dashboard', 'transactions', 'goals'].map(tab => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${activeTab === tab ? 'bg-white text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
-                        >
-                            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                        </button>
+                        <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${activeTab === tab ? 'bg-white text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>{tab.charAt(0).toUpperCase() + tab.slice(1)}</button>
                     ))}
                 </div>
 
@@ -314,8 +339,6 @@ export default function App() {
                 {activeTab === 'dashboard' && (
                     <div className="space-y-8">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            
-                            {/* Columna Izquierda: Registrar Movimiento */}
                             <section className="space-y-4">
                                 <h2 className="text-xl font-bold text-slate-700">Registrar Movimiento</h2>
                                 <Card>
@@ -343,85 +366,42 @@ export default function App() {
                                 </Card>
                             </section>
 
-                            {/* Columna Derecha: PRÓXIMOS PAGOS (Actualizado) */}
                             <section className="space-y-4">
                                 <div className="flex justify-between items-center">
                                     <h2 className="text-xl font-bold text-slate-700">⏳ Próximos Pagos</h2>
                                     <span className="text-sm bg-pink-100 text-pink-700 px-2 py-1 rounded-full font-bold">${totalPendingPayments.toLocaleString()}</span>
                                 </div>
                                 <Card className="bg-slate-50 border-slate-200">
-                                    {/* Formulario mini con FECHA */}
                                     <form onSubmit={handleAddUpcomingPayment} className="flex flex-col gap-2 mb-4 bg-white p-3 rounded-lg border border-gray-100">
                                         <div className="flex gap-2">
-                                            <input 
-                                                type="text" 
-                                                placeholder="Ej. Bici Mes 2, Luz..." 
-                                                className="flex-1 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none"
-                                                value={newPayment.name}
-                                                onChange={e => setNewPayment({...newPayment, name: e.target.value})}
-                                            />
-                                            <input 
-                                                type="number" 
-                                                step="0.01"
-                                                placeholder="$ Monto" 
-                                                className="w-24 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none"
-                                                value={newPayment.amount}
-                                                onChange={e => setNewPayment({...newPayment, amount: e.target.value})}
-                                            />
+                                            <input type="text" placeholder="Concepto..." className="flex-1 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" value={newPayment.name} onChange={e => setNewPayment({...newPayment, name: e.target.value})} />
+                                            <input type="number" step="0.01" placeholder="$" className="w-20 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" value={newPayment.amount} onChange={e => setNewPayment({...newPayment, amount: e.target.value})} />
                                         </div>
                                         <div className="flex gap-2">
-                                            <input 
-                                                type="date"
-                                                className="flex-1 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none text-gray-500"
-                                                value={newPayment.date}
-                                                onChange={e => setNewPayment({...newPayment, date: e.target.value})}
-                                            />
+                                            <input type="date" className="flex-1 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none text-gray-500" value={newPayment.date} onChange={e => setNewPayment({...newPayment, date: e.target.value})} />
                                             <Button type="submit" variant="secondary" className="text-sm px-4">Agregar</Button>
                                         </div>
                                     </form>
-
-                                    {/* Lista de Pagos Pendientes con FECHA */}
                                     <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-                                        {upcomingPayments.length === 0 ? (
-                                            <p className="text-center text-gray-400 text-sm italic py-4">¡Todo pagado! A disfrutar. 🏖️</p>
-                                        ) : (
-                                            upcomingPayments.map(payment => (
-                                                <div key={payment.id} className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-gray-100 group">
-                                                    <div>
-                                                        <p className="font-semibold text-gray-800 text-sm">{payment.name}</p>
-                                                        <div className="flex items-center gap-2">
-                                                            <p className="text-pink-600 font-bold text-sm">${payment.amount.toLocaleString()}</p>
-                                                            {/* Mostrar fecha bonita */}
-                                                            <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
-                                                                📅 {formatDateShort(payment.date)}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex gap-1">
-                                                        <button 
-                                                            onClick={() => handlePayUpcomingPayment(payment)}
-                                                            className="bg-emerald-100 text-emerald-700 hover:bg-emerald-500 hover:text-white p-2 rounded-lg transition-colors text-xs font-bold flex items-center gap-1"
-                                                            title="Pagar"
-                                                        >
-                                                            ✅
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleDeleteUpcomingPayment(payment.id)}
-                                                            className="text-gray-300 hover:text-red-500 p-2 transition-colors"
-                                                            title="Eliminar"
-                                                        >
-                                                            🗑️
-                                                        </button>
+                                        {upcomingPayments.map(payment => (
+                                            <div key={payment.id} className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-gray-100 group">
+                                                <div>
+                                                    <p className="font-semibold text-gray-800 text-sm">{payment.name}</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="text-pink-600 font-bold text-sm">${payment.amount.toLocaleString()}</p>
+                                                        <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded border border-gray-100">📅 {formatDateShort(payment.date)}</span>
                                                     </div>
                                                 </div>
-                                            ))
-                                        )}
+                                                <div className="flex gap-1">
+                                                    <button onClick={() => handlePayUpcomingPayment(payment)} className="bg-emerald-100 text-emerald-700 hover:bg-emerald-500 hover:text-white p-2 rounded-lg transition-colors text-xs font-bold" title="Pagar">✅</button>
+                                                    <button onClick={() => handleDeleteUpcomingPayment(payment.id)} className="text-gray-300 hover:text-red-500 p-2 transition-colors" title="Eliminar">🗑️</button>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </Card>
                             </section>
                         </div>
-
-                        {/* Fila Inferior: Actividad Reciente */}
                         <section className="space-y-4">
                             <h2 className="text-xl font-bold text-slate-700">Historial Reciente</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -429,15 +409,10 @@ export default function App() {
                                     <div key={t.id} className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-gray-50">
                                         <div className="flex items-center gap-3">
                                             <div className={`w-2 h-10 rounded-full ${t.type === 'income' ? 'bg-emerald-500' : t.type === 'fixed' ? 'bg-blue-500' : 'bg-orange-500'}`} />
-                                            <div>
-                                                <p className="font-semibold text-gray-800">{t.description}</p>
-                                                <Badge type={t.type}>{t.type}</Badge>
-                                            </div>
+                                            <div><p className="font-semibold text-gray-800">{t.description}</p><Badge type={t.type}>{t.type}</Badge></div>
                                         </div>
                                         <div className="text-right">
-                                            <span className={`block font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-slate-600'}`}>
-                                                {t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()}
-                                            </span>
+                                            <span className={`block font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-slate-600'}`}>{t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()}</span>
                                             <span className="text-xs text-gray-400">{t.date}</span>
                                         </div>
                                     </div>
@@ -446,8 +421,7 @@ export default function App() {
                         </section>
                     </div>
                 )}
-
-                {/* PESTAÑA TRANSACCIONES (Tabla Completa) */}
+                {/* OTRAS PESTAÑAS (Transactions y Goals) se mantienen igual en lógica, solo que ahora están protegidas por el if(!isAuthenticated) de arriba */}
                 {activeTab === 'transactions' && (
                     <div className="space-y-6">
                         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -466,9 +440,7 @@ export default function App() {
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{t.date}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{t.description}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm"><Badge type={t.type}>{t.type}</Badge></td>
-                                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-slate-600'}`}>
-                                                {t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()}
-                                            </td>
+                                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-slate-600'}`}>{t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -476,73 +448,38 @@ export default function App() {
                         </div>
                     </div>
                 )}
-
-                {/* PESTAÑA METAS */}
                 {activeTab === 'goals' && (
                     <div className="space-y-8">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <div>
                                 <Card className="sticky top-8">
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h3 className="text-xl font-bold text-slate-800">Nueva Meta</h3>
-                                        <span className="text-2xl">🎯</span>
-                                    </div>
+                                    <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold text-slate-800">Nueva Meta</h3><span className="text-2xl">🎯</span></div>
                                     <form onSubmit={handleAddGoal} className="space-y-5">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-                                            <input type="text" className={inputStyle} placeholder="Ej. Viaje" value={newGoal.name} onChange={e => setNewGoal({ ...newGoal, name: e.target.value })} />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Monto Objetivo</label>
-                                            <input type="number" step="0.01" className={inputStyle} placeholder="0.00" value={newGoal.targetAmount} onChange={e => setNewGoal({ ...newGoal, targetAmount: e.target.value })} />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Inicial</label>
-                                            <input type="number" step="0.01" className={inputStyle} placeholder="0.00" value={newGoal.initialAmount} onChange={e => setNewGoal({ ...newGoal, initialAmount: e.target.value })} />
-                                        </div>
+                                        <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input type="text" className={inputStyle} placeholder="Ej. Viaje" value={newGoal.name} onChange={e => setNewGoal({ ...newGoal, name: e.target.value })} /></div>
+                                        <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto Objetivo</label><input type="number" step="0.01" className={inputStyle} placeholder="0.00" value={newGoal.targetAmount} onChange={e => setNewGoal({ ...newGoal, targetAmount: e.target.value })} /></div>
+                                        <div><label className="block text-sm font-medium text-gray-700 mb-1">Inicial</label><input type="number" step="0.01" className={inputStyle} placeholder="0.00" value={newGoal.initialAmount} onChange={e => setNewGoal({ ...newGoal, initialAmount: e.target.value })} /></div>
                                         <Button type="submit" className="w-full mt-2">Crear Meta</Button>
                                     </form>
                                 </Card>
                             </div>
-
                             <div className="space-y-6">
-                                {goals.length === 0 ? (
-                                    <div className="text-center p-8 text-gray-500">No tienes metas aún.</div>
-                                ) : (
-                                    goals.map(goal => {
-                                        const gap = goal.targetAmount - goal.currentAmount;
-                                        return (
-                                            <Card key={goal.id} className="relative overflow-hidden">
-                                                <div className="flex justify-between items-start mb-4">
-                                                    <div>
-                                                        <h3 className="text-xl font-bold text-slate-800">{goal.name}</h3>
-                                                        <p className="text-sm text-slate-500">Meta: ${goal.targetAmount.toLocaleString()}</p>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <p className="text-2xl font-bold text-indigo-600">${goal.currentAmount.toLocaleString()}</p>
-                                                        <p className="text-xs text-orange-500 font-medium">Faltan ${gap.toLocaleString()}</p>
-                                                    </div>
-                                                </div>
-                                                <ProgressBar current={goal.currentAmount} total={goal.targetAmount} />
-                                                <div className="flex gap-3 items-center bg-gray-50 p-3 rounded-lg mt-6">
-                                                    <div className="flex-1">
-                                                        <form onSubmit={(e) => { e.preventDefault(); handleAddFundsToGoal(goal.id, e.target.elements.deposit.value, goal.currentAmount); e.target.reset(); }} className="flex gap-2">
-                                                            <input name="deposit" type="number" step="0.01" placeholder="$ Ingresar" className="w-full text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" />
-                                                            <Button type="submit" variant="secondary" className="text-sm px-3 font-bold">+</Button>
-                                                        </form>
-                                                    </div>
-                                                    <div className="w-px h-8 bg-gray-300"></div>
-                                                    <div className="flex-1">
-                                                        <form onSubmit={(e) => { e.preventDefault(); handleAutoLoan(goal.id, e.target.elements.withdraw.value, goal.currentAmount); e.target.reset(); }} className="flex gap-2 justify-end">
-                                                            <input name="withdraw" type="number" step="0.01" placeholder="$ Retirar" className="w-full text-sm border-red-200 border rounded-lg px-3 py-2 outline-none text-red-700" />
-                                                            <Button type="submit" variant="danger" className="text-sm px-3 font-bold">-</Button>
-                                                        </form>
-                                                    </div>
-                                                </div>
-                                            </Card>
-                                        );
-                                    })
-                                )}
+                                {goals.map(goal => {
+                                    const gap = goal.targetAmount - goal.currentAmount;
+                                    return (
+                                        <Card key={goal.id} className="relative overflow-hidden">
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div><h3 className="text-xl font-bold text-slate-800">{goal.name}</h3><p className="text-sm text-slate-500">Meta: ${goal.targetAmount.toLocaleString()}</p></div>
+                                                <div className="text-right"><p className="text-2xl font-bold text-indigo-600">${goal.currentAmount.toLocaleString()}</p><p className="text-xs text-orange-500 font-medium">Faltan ${gap.toLocaleString()}</p></div>
+                                            </div>
+                                            <ProgressBar current={goal.currentAmount} total={goal.targetAmount} />
+                                            <div className="flex gap-3 items-center bg-gray-50 p-3 rounded-lg mt-6">
+                                                <div className="flex-1"><form onSubmit={(e) => { e.preventDefault(); handleAddFundsToGoal(goal.id, e.target.elements.deposit.value, goal.currentAmount); e.target.reset(); }} className="flex gap-2"><input name="deposit" type="number" step="0.01" placeholder="$ Ingresar" className="w-full text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" /><Button type="submit" variant="secondary" className="text-sm px-3 font-bold">+</Button></form></div>
+                                                <div className="w-px h-8 bg-gray-300"></div>
+                                                <div className="flex-1"><form onSubmit={(e) => { e.preventDefault(); handleAutoLoan(goal.id, e.target.elements.withdraw.value, goal.currentAmount); e.target.reset(); }} className="flex gap-2 justify-end"><input name="withdraw" type="number" step="0.01" placeholder="$ Retirar" className="w-full text-sm border-red-200 border rounded-lg px-3 py-2 outline-none text-red-700" /><Button type="submit" variant="danger" className="text-sm px-3 font-bold">-</Button></form></div>
+                                            </div>
+                                        </Card>
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
