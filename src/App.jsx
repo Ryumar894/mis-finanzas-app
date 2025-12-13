@@ -77,25 +77,91 @@ const Badge = ({ children, type }) => {
     );
 };
 
-// --- PANTALLA DE BLOQUEO (LOGIN SIMPLE) ---
+// --- PANTALLA DE BLOQUEO (MEJORADA CON TIEMPO DE ESPERA) ---
 const LoginScreen = ({ onLogin }) => {
     const [pin, setPin] = useState('');
     const [error, setError] = useState(false);
+    const [attempts, setAttempts] = useState(0); // Contador de intentos
+    const [lockoutTime, setLockoutTime] = useState(null); // Fecha fin del bloqueo
+    const [timeLeft, setTimeLeft] = useState(0); // Cuenta regresiva visual
+
+    // 1. Al cargar, revisar si está bloqueado por un intento anterior
+    useEffect(() => {
+        const savedLock = localStorage.getItem('finance_app_lock_until');
+        if (savedLock) {
+            const unlockTime = parseInt(savedLock);
+            if (unlockTime > Date.now()) {
+                setLockoutTime(unlockTime); // Restaurar bloqueo
+            } else {
+                localStorage.removeItem('finance_app_lock_until'); // Ya pasó el tiempo
+            }
+        }
+    }, []);
+
+    // 2. Temporizador para la cuenta regresiva
+    useEffect(() => {
+        if (!lockoutTime) return;
+
+        const interval = setInterval(() => {
+            const remaining = Math.ceil((lockoutTime - Date.now()) / 1000);
+            if (remaining <= 0) {
+                // Desbloquear
+                setLockoutTime(null);
+                setAttempts(0);
+                setTimeLeft(0);
+                localStorage.removeItem('finance_app_lock_until');
+            } else {
+                setTimeLeft(remaining);
+            }
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [lockoutTime]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        // --- AQUÍ DEFINE TU CLAVE SECRETA ---
-        if (pin === '2008') { 
+        if (lockoutTime) return; // Si está bloqueado, no hacer nada
+
+        if (pin === '2026') { 
             onLogin();
         } else {
+            const newAttempts = attempts + 1;
+            setAttempts(newAttempts);
             setError(true);
             setPin('');
+
+            // Si llega a 5 intentos fallidos
+            if (newAttempts >= 5) {
+                const lockDuration = 5 * 60 * 1000; // 5 minutos en milisegundos
+                const unlockTime = Date.now() + lockDuration;
+                setLockoutTime(unlockTime);
+                localStorage.setItem('finance_app_lock_until', unlockTime.toString());
+            }
         }
+    };
+
+    // Formatear segundos a MM:SS
+    const formatTime = (seconds) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${s < 10 ? '0' : ''}${s}`;
     };
 
     return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-            <Card className="w-full max-w-sm text-center space-y-6 py-10">
+            <Card className="w-full max-w-sm text-center space-y-6 py-10 relative overflow-hidden">
+                {lockoutTime && (
+                    <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-6 animate-in fade-in">
+                        <div className="text-4xl mb-4">⏳</div>
+                        <h3 className="text-xl font-bold text-red-600 mb-2">Sistema Bloqueado</h3>
+                        <p className="text-slate-500 text-sm mb-4">Demasiados intentos fallidos.</p>
+                        <div className="text-3xl font-mono font-bold text-slate-800">
+                            {formatTime(timeLeft)}
+                        </div>
+                        <p className="text-xs text-slate-400 mt-4">Espera para intentar de nuevo</p>
+                    </div>
+                )}
+
                 <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto text-4xl">
                     🔒
                 </div>
@@ -107,15 +173,20 @@ const LoginScreen = ({ onLogin }) => {
                     <input 
                         type="password" 
                         inputMode="numeric" 
-                        className="w-full text-center text-3xl tracking-[1em] font-bold p-3 border-b-2 border-gray-300 focus:border-indigo-600 outline-none bg-transparent transition-colors"
+                        className="w-full text-center text-3xl tracking-[1em] font-bold p-3 border-b-2 border-gray-300 focus:border-indigo-600 outline-none bg-transparent transition-colors disabled:opacity-50"
                         placeholder="••••"
                         maxLength={4}
                         value={pin}
                         onChange={(e) => { setPin(e.target.value); setError(false); }}
                         autoFocus
+                        disabled={!!lockoutTime}
                     />
-                    {error && <p className="text-red-500 text-sm font-medium">PIN Incorrecto</p>}
-                    <Button type="submit" className="w-full">Entrar</Button>
+                    {error && !lockoutTime && (
+                        <p className="text-red-500 text-sm font-medium animate-pulse">
+                            PIN Incorrecto ({5 - attempts} intentos restantes)
+                        </p>
+                    )}
+                    <Button type="submit" className="w-full" disabled={!!lockoutTime}>Entrar</Button>
                 </form>
             </Card>
         </div>
@@ -421,7 +492,7 @@ export default function App() {
                         </section>
                     </div>
                 )}
-                {/* OTRAS PESTAÑAS (Transactions y Goals) se mantienen igual en lógica, solo que ahora están protegidas por el if(!isAuthenticated) de arriba */}
+                {/* OTRAS PESTAÑAS (Transactions y Goals) */}
                 {activeTab === 'transactions' && (
                     <div className="space-y-6">
                         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
