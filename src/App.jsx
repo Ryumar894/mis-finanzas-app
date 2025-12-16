@@ -77,35 +77,31 @@ const Badge = ({ children, type }) => {
     );
 };
 
-// --- PANTALLA DE BLOQUEO (MEJORADA CON TIEMPO DE ESPERA) ---
+// --- PANTALLA DE BLOQUEO ---
 const LoginScreen = ({ onLogin }) => {
     const [pin, setPin] = useState('');
     const [error, setError] = useState(false);
-    const [attempts, setAttempts] = useState(0); // Contador de intentos
-    const [lockoutTime, setLockoutTime] = useState(null); // Fecha fin del bloqueo
-    const [timeLeft, setTimeLeft] = useState(0); // Cuenta regresiva visual
+    const [attempts, setAttempts] = useState(0); 
+    const [lockoutTime, setLockoutTime] = useState(null); 
+    const [timeLeft, setTimeLeft] = useState(0);
 
-    // 1. Al cargar, revisar si está bloqueado por un intento anterior
     useEffect(() => {
         const savedLock = localStorage.getItem('finance_app_lock_until');
         if (savedLock) {
             const unlockTime = parseInt(savedLock);
             if (unlockTime > Date.now()) {
-                setLockoutTime(unlockTime); // Restaurar bloqueo
+                setLockoutTime(unlockTime); 
             } else {
-                localStorage.removeItem('finance_app_lock_until'); // Ya pasó el tiempo
+                localStorage.removeItem('finance_app_lock_until'); 
             }
         }
     }, []);
 
-    // 2. Temporizador para la cuenta regresiva
     useEffect(() => {
         if (!lockoutTime) return;
-
         const interval = setInterval(() => {
             const remaining = Math.ceil((lockoutTime - Date.now()) / 1000);
             if (remaining <= 0) {
-                // Desbloquear
                 setLockoutTime(null);
                 setAttempts(0);
                 setTimeLeft(0);
@@ -114,15 +110,15 @@ const LoginScreen = ({ onLogin }) => {
                 setTimeLeft(remaining);
             }
         }, 1000);
-
         return () => clearInterval(interval);
     }, [lockoutTime]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (lockoutTime) return; // Si está bloqueado, no hacer nada
+        if (lockoutTime) return;
 
-        if (pin === '2008') { 
+        // --- TU PIN ---
+        if (pin === '2026') { 
             onLogin();
         } else {
             const newAttempts = attempts + 1;
@@ -130,9 +126,8 @@ const LoginScreen = ({ onLogin }) => {
             setError(true);
             setPin('');
 
-            // Si llega a 5 intentos fallidos
             if (newAttempts >= 5) {
-                const lockDuration = 5 * 60 * 1000; // 5 minutos en milisegundos
+                const lockDuration = 5 * 60 * 1000; 
                 const unlockTime = Date.now() + lockDuration;
                 setLockoutTime(unlockTime);
                 localStorage.setItem('finance_app_lock_until', unlockTime.toString());
@@ -140,7 +135,6 @@ const LoginScreen = ({ onLogin }) => {
         }
     };
 
-    // Formatear segundos a MM:SS
     const formatTime = (seconds) => {
         const m = Math.floor(seconds / 60);
         const s = seconds % 60;
@@ -155,37 +149,17 @@ const LoginScreen = ({ onLogin }) => {
                         <div className="text-4xl mb-4">⏳</div>
                         <h3 className="text-xl font-bold text-red-600 mb-2">Sistema Bloqueado</h3>
                         <p className="text-slate-500 text-sm mb-4">Demasiados intentos fallidos.</p>
-                        <div className="text-3xl font-mono font-bold text-slate-800">
-                            {formatTime(timeLeft)}
-                        </div>
-                        <p className="text-xs text-slate-400 mt-4">Espera para intentar de nuevo</p>
+                        <div className="text-3xl font-mono font-bold text-slate-800">{formatTime(timeLeft)}</div>
                     </div>
                 )}
-
-                <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto text-4xl">
-                    🔒
-                </div>
+                <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto text-4xl">🔒</div>
                 <div>
                     <h2 className="text-2xl font-bold text-slate-800">Acceso Restringido</h2>
                     <p className="text-slate-500 text-sm mt-2">Ingresa tu PIN de seguridad</p>
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    <input 
-                        type="password" 
-                        inputMode="numeric" 
-                        className="w-full text-center text-3xl tracking-[1em] font-bold p-3 border-b-2 border-gray-300 focus:border-indigo-600 outline-none bg-transparent transition-colors disabled:opacity-50"
-                        placeholder="••••"
-                        maxLength={4}
-                        value={pin}
-                        onChange={(e) => { setPin(e.target.value); setError(false); }}
-                        autoFocus
-                        disabled={!!lockoutTime}
-                    />
-                    {error && !lockoutTime && (
-                        <p className="text-red-500 text-sm font-medium animate-pulse">
-                            PIN Incorrecto ({5 - attempts} intentos restantes)
-                        </p>
-                    )}
+                    <input type="password" inputMode="numeric" className="w-full text-center text-3xl tracking-[1em] font-bold p-3 border-b-2 border-gray-300 focus:border-indigo-600 outline-none bg-transparent transition-colors disabled:opacity-50" placeholder="••••" maxLength={4} value={pin} onChange={(e) => { setPin(e.target.value); setError(false); }} autoFocus disabled={!!lockoutTime} />
+                    {error && !lockoutTime && <p className="text-red-500 text-sm font-medium animate-pulse">PIN Incorrecto</p>}
                     <Button type="submit" className="w-full" disabled={!!lockoutTime}>Entrar</Button>
                 </form>
             </Card>
@@ -196,43 +170,33 @@ const LoginScreen = ({ onLogin }) => {
 // --- APP PRINCIPAL ---
 
 export default function App() {
-    // Estado de Autenticación
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [loadingAuth, setLoadingAuth] = useState(true);
 
-    // Estados de Datos
     const [transactions, setTransactions] = useState([]);
     const [goals, setGoals] = useState([]);
     const [upcomingPayments, setUpcomingPayments] = useState([]); 
+    // NUEVO ESTADO: Cuentas por Cobrar
+    const [receivables, setReceivables] = useState([]); 
     const [internalDebt, setInternalDebt] = useState(0);
 
     const [newTransaction, setNewTransaction] = useState({ type: 'variable', amount: '', description: '' });
     const [newGoal, setNewGoal] = useState({ name: '', targetAmount: '', initialAmount: '' });
     const [newPayment, setNewPayment] = useState({ name: '', amount: '', date: '' }); 
+    // NUEVO FORMULARIO: Cuentas por Cobrar
+    const [newReceivable, setNewReceivable] = useState({ name: '', amount: '' });
+
     const [activeTab, setActiveTab] = useState('dashboard');
 
-    // Verificar si ya inició sesión antes (localStorage)
     useEffect(() => {
         const loggedIn = localStorage.getItem('finance_app_auth');
-        if (loggedIn === 'true') {
-            setIsAuthenticated(true);
-        }
+        if (loggedIn === 'true') setIsAuthenticated(true);
         setLoadingAuth(false);
     }, []);
 
-    const handleLogin = () => {
-        localStorage.setItem('finance_app_auth', 'true');
-        setIsAuthenticated(true);
-    };
+    const handleLogin = () => { localStorage.setItem('finance_app_auth', 'true'); setIsAuthenticated(true); };
+    const handleLogout = () => { if(confirm("¿Cerrar sesión?")) { localStorage.removeItem('finance_app_auth'); setIsAuthenticated(false); }};
 
-    const handleLogout = () => {
-        if(confirm("¿Cerrar sesión?")) {
-            localStorage.removeItem('finance_app_auth');
-            setIsAuthenticated(false);
-        }
-    };
-
-    // --- ESCUCHAR FIREBASE (Solo si está autenticado) ---
     useEffect(() => {
         if (!isAuthenticated) return;
 
@@ -245,13 +209,17 @@ export default function App() {
         const q3 = query(collection(db, "upcoming_payments"), orderBy("date", "asc"));
         const unsub3 = onSnapshot(q3, (snap) => setUpcomingPayments(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
+        // NUEVA SUSCRIPCIÓN: Receivables (Por Cobrar)
+        const q4 = query(collection(db, "receivables"), orderBy("createdAt", "desc"));
+        const unsub4 = onSnapshot(q4, (snap) => setReceivables(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
         const docRef = doc(db, "financialData", "general");
-        const unsub4 = onSnapshot(docRef, (docSnap) => {
+        const unsub5 = onSnapshot(docRef, (docSnap) => {
             if (docSnap.exists()) setInternalDebt(docSnap.data().internalDebt || 0);
             else setDoc(docRef, { internalDebt: 0 });
         });
 
-        return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+        return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
     }, [isAuthenticated]);
 
     // Cálculos
@@ -259,9 +227,11 @@ export default function App() {
     const totalExpenses = transactions.filter(t => ['variable', 'fixed'].includes(t.type)).reduce((acc, curr) => acc + curr.amount, 0);
     const totalSavingsInGoals = goals.reduce((acc, curr) => acc + curr.currentAmount, 0);
     const currentBalance = totalIncome - totalExpenses - totalSavingsInGoals;
+    
     const totalPendingPayments = upcomingPayments.reduce((acc, curr) => acc + curr.amount, 0);
+    const totalReceivables = receivables.reduce((acc, curr) => acc + curr.amount, 0); // Total que me deben
 
-    // --- FUNCIONES CRUD ---
+    // --- FUNCIONES ---
     const handleAddTransaction = async (e) => {
         e.preventDefault();
         if (!newTransaction.amount || !newTransaction.description) return;
@@ -277,6 +247,7 @@ export default function App() {
         } catch (error) { console.error("Error:", error); }
     };
 
+    // Funciones Pagos (Por Pagar)
     const handleAddUpcomingPayment = async (e) => {
         e.preventDefault();
         if (!newPayment.name || !newPayment.amount || !newPayment.date) { alert("Completa todos los campos"); return; }
@@ -300,9 +271,41 @@ export default function App() {
             await deleteDoc(doc(db, "upcoming_payments", payment.id));
         } catch (error) { console.error("Error:", error); }
     };
-
     const handleDeleteUpcomingPayment = async (id) => { if (confirm("¿Eliminar?")) await deleteDoc(doc(db, "upcoming_payments", id)); };
 
+    // NUEVAS FUNCIONES: Cobros (Por Cobrar)
+    const handleAddReceivable = async (e) => {
+        e.preventDefault();
+        if (!newReceivable.name || !newReceivable.amount) return;
+        try {
+            await addDoc(collection(db, "receivables"), {
+                name: newReceivable.name,
+                amount: parseFloat(newReceivable.amount),
+                createdAt: new Date()
+            });
+            setNewReceivable({ name: '', amount: '' });
+        } catch (error) { console.error(error); }
+    };
+
+    const handleCollectReceivable = async (receivable) => {
+        if (!confirm(`¿Ya te pagó ${receivable.name} los $${receivable.amount}?`)) return;
+        try {
+            // 1. Crear Ingreso (Ahora sí entra el dinero)
+            await addDoc(collection(db, "transactions"), {
+                type: 'income', 
+                amount: receivable.amount, 
+                description: `Pago de: ${receivable.name}`, 
+                date: new Date().toISOString().split('T')[0], 
+                createdAt: new Date()
+            });
+            // 2. Borrar de la lista de pendientes
+            await deleteDoc(doc(db, "receivables", receivable.id));
+        } catch (error) { console.error("Error al cobrar:", error); }
+    };
+    
+    const handleDeleteReceivable = async (id) => { if (confirm("¿Borrar deuda (sin cobrar)?")) await deleteDoc(doc(db, "receivables", id)); };
+
+    // Funciones Metas
     const handleAddGoal = async (e) => {
         e.preventDefault();
         if (!newGoal.name || !newGoal.targetAmount) return;
@@ -341,7 +344,6 @@ export default function App() {
 
     const inputStyle = "w-full rounded-lg border-gray-300 border p-2 focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-gray-900";
 
-    // --- RENDERIZADO CONDICIONAL ---
     if (loadingAuth) return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Cargando...</div>;
     if (!isAuthenticated) return <LoginScreen onLogin={handleLogin} />;
 
@@ -349,29 +351,20 @@ export default function App() {
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 md:p-8 w-full">
             <div className="w-full max-w-7xl mx-auto space-y-8">
                 
-                {/* Header con Logout */}
+                {/* Header */}
                 <header className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                     <div className="flex items-center gap-4">
                         <div>
-                            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
-                                Finanzas Personales
-                            </h1>
-                            <p className="text-slate-500 mt-1 flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                                En línea
-                            </p>
+                            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">Finanzas Personales</h1>
+                            <p className="text-slate-500 mt-1 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>En línea</p>
                         </div>
                     </div>
                     <div className="mt-4 md:mt-0 flex items-center gap-6">
                         <div className="text-right">
                             <p className="text-sm text-slate-500">Saldo Disponible</p>
-                            <p className={`text-3xl font-bold ${currentBalance < 0 ? 'text-red-500' : 'text-emerald-600'}`}>
-                                ${currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </p>
+                            <p className={`text-3xl font-bold ${currentBalance < 0 ? 'text-red-500' : 'text-emerald-600'}`}>${currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                         </div>
-                        <button onClick={handleLogout} className="text-gray-400 hover:text-red-500 transition-colors" title="Salir">
-                            <span className="text-xl">🚪</span>
-                        </button>
+                        <button onClick={handleLogout} className="text-gray-400 hover:text-red-500 transition-colors"><span className="text-xl">🚪</span></button>
                     </div>
                 </header>
 
@@ -381,17 +374,14 @@ export default function App() {
                         <h3 className="text-slate-500 font-medium text-sm">Ahorro (Metas)</h3>
                         <p className="text-xl font-bold text-indigo-700 mt-1">${totalSavingsInGoals.toLocaleString()}</p>
                     </Card>
-                    <Card className="border-l-4 border-l-red-400">
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <h3 className="text-slate-500 font-medium text-sm">Deuda Interna</h3>
-                                <p className="text-xl font-bold text-red-600 mt-1">${internalDebt.toLocaleString()}</p>
-                            </div>
-                        </div>
-                    </Card>
                     <Card className="border-l-4 border-l-pink-500 bg-pink-50/30">
                         <h3 className="text-slate-500 font-medium text-sm">Por Pagar</h3>
                         <p className="text-xl font-bold text-pink-600 mt-1">${totalPendingPayments.toLocaleString()}</p>
+                    </Card>
+                    {/* NUEVA CARD RESUMEN: Me deben */}
+                    <Card className="border-l-4 border-l-teal-500 bg-teal-50/30">
+                        <h3 className="text-slate-500 font-medium text-sm">Me deben</h3>
+                        <p className="text-xl font-bold text-teal-600 mt-1">${totalReceivables.toLocaleString()}</p>
                     </Card>
                     <Card className="border-l-4 border-l-orange-400">
                         <h3 className="text-slate-500 font-medium text-sm">Gastos Mes</h3>
@@ -406,113 +396,101 @@ export default function App() {
                     ))}
                 </div>
 
-                {/* PESTAÑA DASHBOARD */}
+                {/* DASHBOARD */}
                 {activeTab === 'dashboard' && (
                     <div className="space-y-8">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            
+                            {/* IZQUIERDA: Registrar Movimiento */}
                             <section className="space-y-4">
                                 <h2 className="text-xl font-bold text-slate-700">Registrar Movimiento</h2>
                                 <Card>
                                     <form onSubmit={handleAddTransaction} className="space-y-4">
                                         <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
-                                                <select className={inputStyle} value={newTransaction.type} onChange={e => setNewTransaction({ ...newTransaction, type: e.target.value })}>
-                                                    <option value="income">Ingreso</option>
-                                                    <option value="variable">Gasto Variable</option>
-                                                    <option value="fixed">Gasto Fijo</option>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
-                                                <input type="number" step="0.01" className={inputStyle} placeholder="0.00" value={newTransaction.amount} onChange={e => setNewTransaction({ ...newTransaction, amount: e.target.value })} />
-                                            </div>
+                                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label><select className={inputStyle} value={newTransaction.type} onChange={e => setNewTransaction({ ...newTransaction, type: e.target.value })}><option value="income">Ingreso</option><option value="variable">Gasto Variable</option><option value="fixed">Gasto Fijo</option></select></div>
+                                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto</label><input type="number" step="0.01" className={inputStyle} placeholder="0.00" value={newTransaction.amount} onChange={e => setNewTransaction({ ...newTransaction, amount: e.target.value })} /></div>
                                         </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
-                                            <input type="text" className={inputStyle} placeholder="Ej. Tacos, Renta..." value={newTransaction.description} onChange={e => setNewTransaction({ ...newTransaction, description: e.target.value })} />
-                                        </div>
+                                        <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input type="text" className={inputStyle} placeholder="Ej. Tacos, Renta..." value={newTransaction.description} onChange={e => setNewTransaction({ ...newTransaction, description: e.target.value })} /></div>
                                         <Button type="submit" className="w-full">Registrar</Button>
                                     </form>
                                 </Card>
                             </section>
 
-                            <section className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <h2 className="text-xl font-bold text-slate-700">⏳ Próximos Pagos</h2>
-                                    <span className="text-sm bg-pink-100 text-pink-700 px-2 py-1 rounded-full font-bold">${totalPendingPayments.toLocaleString()}</span>
-                                </div>
-                                <Card className="bg-slate-50 border-slate-200">
-                                    <form onSubmit={handleAddUpcomingPayment} className="flex flex-col gap-2 mb-4 bg-white p-3 rounded-lg border border-gray-100">
-                                        <div className="flex gap-2">
-                                            <input type="text" placeholder="Concepto..." className="flex-1 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" value={newPayment.name} onChange={e => setNewPayment({...newPayment, name: e.target.value})} />
-                                            <input type="number" step="0.01" placeholder="$" className="w-20 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" value={newPayment.amount} onChange={e => setNewPayment({...newPayment, amount: e.target.value})} />
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <input type="date" className="flex-1 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none text-gray-500" value={newPayment.date} onChange={e => setNewPayment({...newPayment, date: e.target.value})} />
-                                            <Button type="submit" variant="secondary" className="text-sm px-4">Agregar</Button>
-                                        </div>
-                                    </form>
-                                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-                                        {upcomingPayments.map(payment => (
-                                            <div key={payment.id} className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-gray-100 group">
-                                                <div>
-                                                    <p className="font-semibold text-gray-800 text-sm">{payment.name}</p>
-                                                    <div className="flex items-center gap-2">
-                                                        <p className="text-pink-600 font-bold text-sm">${payment.amount.toLocaleString()}</p>
-                                                        <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded border border-gray-100">📅 {formatDateShort(payment.date)}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="flex gap-1">
-                                                    <button onClick={() => handlePayUpcomingPayment(payment)} className="bg-emerald-100 text-emerald-700 hover:bg-emerald-500 hover:text-white p-2 rounded-lg transition-colors text-xs font-bold" title="Pagar">✅</button>
-                                                    <button onClick={() => handleDeleteUpcomingPayment(payment.id)} className="text-gray-300 hover:text-red-500 p-2 transition-colors" title="Eliminar">🗑️</button>
-                                                </div>
-                                            </div>
-                                        ))}
+                            {/* DERECHA: PENDIENTES (Deudas y Cobros) */}
+                            <div className="space-y-8">
+                                
+                                {/* 1. LO QUE DEBO (Próximos Pagos) */}
+                                <section className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <h2 className="text-xl font-bold text-slate-700">⏳ Por Pagar</h2>
+                                        <span className="text-sm bg-pink-100 text-pink-700 px-2 py-1 rounded-full font-bold">${totalPendingPayments.toLocaleString()}</span>
                                     </div>
-                                </Card>
-                            </section>
+                                    <Card className="bg-slate-50 border-slate-200">
+                                        <form onSubmit={handleAddUpcomingPayment} className="flex flex-col gap-2 mb-4 bg-white p-3 rounded-lg border border-gray-100">
+                                            <div className="flex gap-2"><input type="text" placeholder="Concepto..." className="flex-1 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" value={newPayment.name} onChange={e => setNewPayment({...newPayment, name: e.target.value})} /><input type="number" step="0.01" placeholder="$" className="w-20 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" value={newPayment.amount} onChange={e => setNewPayment({...newPayment, amount: e.target.value})} /></div>
+                                            <div className="flex gap-2"><input type="date" className="flex-1 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none text-gray-500" value={newPayment.date} onChange={e => setNewPayment({...newPayment, date: e.target.value})} /><Button type="submit" variant="secondary" className="text-sm px-4">Agregar</Button></div>
+                                        </form>
+                                        <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+                                            {upcomingPayments.map(payment => (
+                                                <div key={payment.id} className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-gray-100 group">
+                                                    <div><p className="font-semibold text-gray-800 text-sm">{payment.name}</p><div className="flex items-center gap-2"><p className="text-pink-600 font-bold text-sm">${payment.amount.toLocaleString()}</p><span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded border border-gray-100">📅 {formatDateShort(payment.date)}</span></div></div>
+                                                    <div className="flex gap-1"><button onClick={() => handlePayUpcomingPayment(payment)} className="bg-emerald-100 text-emerald-700 hover:bg-emerald-500 hover:text-white p-2 rounded-lg transition-colors text-xs font-bold" title="Pagar">✅</button><button onClick={() => handleDeleteUpcomingPayment(payment.id)} className="text-gray-300 hover:text-red-500 p-2 transition-colors" title="Eliminar">🗑️</button></div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </Card>
+                                </section>
+
+                                {/* 2. LO QUE ME DEBEN (Cuentas por Cobrar) - NUEVO MODULO */}
+                                <section className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <h2 className="text-xl font-bold text-slate-700">💰 Por Cobrar</h2>
+                                        <span className="text-sm bg-teal-100 text-teal-700 px-2 py-1 rounded-full font-bold">${totalReceivables.toLocaleString()}</span>
+                                    </div>
+                                    <Card className="bg-slate-50 border-slate-200">
+                                        <form onSubmit={handleAddReceivable} className="flex gap-2 mb-4 bg-white p-3 rounded-lg border border-gray-100">
+                                            <input type="text" placeholder="¿Quién me debe?" className="flex-1 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" value={newReceivable.name} onChange={e => setNewReceivable({...newReceivable, name: e.target.value})} />
+                                            <input type="number" step="0.01" placeholder="$" className="w-24 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" value={newReceivable.amount} onChange={e => setNewReceivable({...newReceivable, amount: e.target.value})} />
+                                            <Button type="submit" variant="secondary" className="text-sm px-4">+</Button>
+                                        </form>
+                                        <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+                                            {receivables.length === 0 ? <p className="text-center text-xs text-gray-400 py-2">Nadie te debe dinero.</p> : receivables.map(item => (
+                                                <div key={item.id} className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-gray-100 group">
+                                                    <div><p className="font-semibold text-gray-800 text-sm">{item.name}</p><p className="text-teal-600 font-bold text-sm">${item.amount.toLocaleString()}</p></div>
+                                                    <div className="flex gap-1"><button onClick={() => handleCollectReceivable(item)} className="bg-teal-100 text-teal-700 hover:bg-teal-500 hover:text-white p-2 rounded-lg transition-colors text-xs font-bold flex items-center gap-1" title="Ya me pagó">💰 Cobrar</button><button onClick={() => handleDeleteReceivable(item.id)} className="text-gray-300 hover:text-red-500 p-2 transition-colors" title="Eliminar">🗑️</button></div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </Card>
+                                </section>
+
+                            </div>
                         </div>
+
+                        {/* HISTORIAL RECIENTE */}
                         <section className="space-y-4">
                             <h2 className="text-xl font-bold text-slate-700">Historial Reciente</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {transactions.slice(0, 6).map(t => (
                                     <div key={t.id} className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-gray-50">
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-2 h-10 rounded-full ${t.type === 'income' ? 'bg-emerald-500' : t.type === 'fixed' ? 'bg-blue-500' : 'bg-orange-500'}`} />
-                                            <div><p className="font-semibold text-gray-800">{t.description}</p><Badge type={t.type}>{t.type}</Badge></div>
-                                        </div>
-                                        <div className="text-right">
-                                            <span className={`block font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-slate-600'}`}>{t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()}</span>
-                                            <span className="text-xs text-gray-400">{t.date}</span>
-                                        </div>
+                                        <div className="flex items-center gap-3"><div className={`w-2 h-10 rounded-full ${t.type === 'income' ? 'bg-emerald-500' : t.type === 'fixed' ? 'bg-blue-500' : 'bg-orange-500'}`} /><div><p className="font-semibold text-gray-800">{t.description}</p><Badge type={t.type}>{t.type}</Badge></div></div>
+                                        <div className="text-right"><span className={`block font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-slate-600'}`}>{t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()}</span><span className="text-xs text-gray-400">{t.date}</span></div>
                                     </div>
                                 ))}
                             </div>
                         </section>
                     </div>
                 )}
-                {/* OTRAS PESTAÑAS (Transactions y Goals) */}
                 {activeTab === 'transactions' && (
                     <div className="space-y-6">
                         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                              <table className="w-full">
                                 <thead className="bg-gray-50 border-b border-gray-200">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Fecha</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Descripción</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Tipo</th>
-                                        <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Monto</th>
-                                    </tr>
+                                    <tr><th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Fecha</th><th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Descripción</th><th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Tipo</th><th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Monto</th></tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {transactions.map(t => (
-                                        <tr key={t.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{t.date}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{t.description}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm"><Badge type={t.type}>{t.type}</Badge></td>
-                                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-slate-600'}`}>{t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()}</td>
-                                        </tr>
+                                        <tr key={t.id} className="hover:bg-gray-50"><td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{t.date}</td><td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{t.description}</td><td className="px-6 py-4 whitespace-nowrap text-sm"><Badge type={t.type}>{t.type}</Badge></td><td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-slate-600'}`}>{t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString()}</td></tr>
                                     ))}
                                 </tbody>
                             </table>
