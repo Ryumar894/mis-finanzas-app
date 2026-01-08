@@ -176,17 +176,19 @@ export default function App() {
     const [transactions, setTransactions] = useState([]);
     const [goals, setGoals] = useState([]);
     const [upcomingPayments, setUpcomingPayments] = useState([]); 
-    // NUEVO ESTADO: Cuentas por Cobrar
-    const [receivables, setReceivables] = useState([]); 
+    const [receivables, setReceivables] = useState([]); // Cuentas por Cobrar
     const [internalDebt, setInternalDebt] = useState(0);
 
     const [newTransaction, setNewTransaction] = useState({ type: 'variable', amount: '', description: '' });
     const [newGoal, setNewGoal] = useState({ name: '', targetAmount: '', initialAmount: '' });
     const [newPayment, setNewPayment] = useState({ name: '', amount: '', date: '' }); 
-    // NUEVO FORMULARIO: Cuentas por Cobrar
     const [newReceivable, setNewReceivable] = useState({ name: '', amount: '' });
 
     const [activeTab, setActiveTab] = useState('dashboard');
+
+    // --- NUEVOS ESTADOS PARA EDICIÓN DE METAS ---
+    const [editingGoalId, setEditingGoalId] = useState(null);
+    const [editingGoalName, setEditingGoalName] = useState('');
 
     useEffect(() => {
         const loggedIn = localStorage.getItem('finance_app_auth');
@@ -209,7 +211,6 @@ export default function App() {
         const q3 = query(collection(db, "upcoming_payments"), orderBy("date", "asc"));
         const unsub3 = onSnapshot(q3, (snap) => setUpcomingPayments(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        // NUEVA SUSCRIPCIÓN: Receivables (Por Cobrar)
         const q4 = query(collection(db, "receivables"), orderBy("createdAt", "desc"));
         const unsub4 = onSnapshot(q4, (snap) => setReceivables(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
@@ -273,7 +274,7 @@ export default function App() {
     };
     const handleDeleteUpcomingPayment = async (id) => { if (confirm("¿Eliminar?")) await deleteDoc(doc(db, "upcoming_payments", id)); };
 
-    // NUEVAS FUNCIONES: Cobros (Por Cobrar)
+    // --- FUNCIONES DEUDAS (POR COBRAR) ---
     const handleAddReceivable = async (e) => {
         e.preventDefault();
         if (!newReceivable.name || !newReceivable.amount) return;
@@ -290,7 +291,6 @@ export default function App() {
     const handleCollectReceivable = async (receivable) => {
         if (!confirm(`¿Ya te pagó ${receivable.name} los $${receivable.amount}?`)) return;
         try {
-            // 1. Crear Ingreso (Ahora sí entra el dinero)
             await addDoc(collection(db, "transactions"), {
                 type: 'income', 
                 amount: receivable.amount, 
@@ -298,14 +298,13 @@ export default function App() {
                 date: new Date().toISOString().split('T')[0], 
                 createdAt: new Date()
             });
-            // 2. Borrar de la lista de pendientes
             await deleteDoc(doc(db, "receivables", receivable.id));
         } catch (error) { console.error("Error al cobrar:", error); }
     };
     
     const handleDeleteReceivable = async (id) => { if (confirm("¿Borrar deuda (sin cobrar)?")) await deleteDoc(doc(db, "receivables", id)); };
 
-    // Funciones Metas
+    // --- FUNCIONES METAS ---
     const handleAddGoal = async (e) => {
         e.preventDefault();
         if (!newGoal.name || !newGoal.targetAmount) return;
@@ -335,6 +334,27 @@ export default function App() {
             await updateDoc(doc(db, "financialData", "general"), { internalDebt: internalDebt + val });
         } catch (error) { console.error(error); }
     };
+
+    // --- FUNCIONES NUEVAS PARA EDICIÓN Y ELIMINACIÓN DE METAS ---
+    const handleDeleteGoal = async (id) => {
+        if (confirm("¿Estás seguro de eliminar esta meta? Se perderá el progreso registrado.")) {
+            await deleteDoc(doc(db, "goals", id));
+        }
+    };
+
+    const startEditingGoal = (goal) => {
+        setEditingGoalId(goal.id);
+        setEditingGoalName(goal.name);
+    };
+
+    const saveGoalName = async (id) => {
+        if (!editingGoalName.trim()) return;
+        try {
+            await updateDoc(doc(db, "goals", id), { name: editingGoalName });
+            setEditingGoalId(null);
+        } catch (error) { console.error(error); }
+    };
+
 
     const formatDateShort = (dateString) => {
         if (!dateString) return '';
@@ -441,18 +461,34 @@ export default function App() {
                                     </Card>
                                 </section>
 
-                                {/* 2. LO QUE ME DEBEN (Cuentas por Cobrar) - NUEVO MODULO */}
+                                {/* 2. LO QUE ME DEBEN (Cuentas por Cobrar) */}
                                 <section className="space-y-4">
                                     <div className="flex justify-between items-center">
                                         <h2 className="text-xl font-bold text-slate-700">💰 Por Cobrar</h2>
                                         <span className="text-sm bg-teal-100 text-teal-700 px-2 py-1 rounded-full font-bold">${totalReceivables.toLocaleString()}</span>
                                     </div>
                                     <Card className="bg-slate-50 border-slate-200">
+                                        
+                                        {/* FIX DE CSS APLICADO AQUÍ (flex-1 min-w-0) */}
                                         <form onSubmit={handleAddReceivable} className="flex gap-2 mb-4 bg-white p-3 rounded-lg border border-gray-100">
-                                            <input type="text" placeholder="¿Quién me debe?" className="flex-1 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" value={newReceivable.name} onChange={e => setNewReceivable({...newReceivable, name: e.target.value})} />
-                                            <input type="number" step="0.01" placeholder="$" className="w-24 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" value={newReceivable.amount} onChange={e => setNewReceivable({...newReceivable, amount: e.target.value})} />
-                                            <Button type="submit" variant="secondary" className="text-sm px-4">+</Button>
+                                            <input 
+                                                type="text" 
+                                                placeholder="¿Quién debe?" 
+                                                className="flex-1 min-w-0 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none" 
+                                                value={newReceivable.name} 
+                                                onChange={e => setNewReceivable({...newReceivable, name: e.target.value})} 
+                                            />
+                                            <input 
+                                                type="number" 
+                                                step="0.01" 
+                                                placeholder="$" 
+                                                className="w-20 text-sm border-gray-300 border rounded-lg px-3 py-2 outline-none text-center" 
+                                                value={newReceivable.amount} 
+                                                onChange={e => setNewReceivable({...newReceivable, amount: e.target.value})} 
+                                            />
+                                            <Button type="submit" variant="secondary" className="text-sm px-3 font-bold">+</Button>
                                         </form>
+
                                         <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
                                             {receivables.length === 0 ? <p className="text-center text-xs text-gray-400 py-2">Nadie te debe dinero.</p> : receivables.map(item => (
                                                 <div key={item.id} className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-gray-100 group">
@@ -514,11 +550,59 @@ export default function App() {
                             <div className="space-y-6">
                                 {goals.map(goal => {
                                     const gap = goal.targetAmount - goal.currentAmount;
+                                    const isEditing = editingGoalId === goal.id; // LÓGICA DE EDICIÓN
+
                                     return (
-                                        <Card key={goal.id} className="relative overflow-hidden">
+                                        <Card key={goal.id} className="relative overflow-hidden group">
                                             <div className="flex justify-between items-start mb-4">
-                                                <div><h3 className="text-xl font-bold text-slate-800">{goal.name}</h3><p className="text-sm text-slate-500">Meta: ${goal.targetAmount.toLocaleString()}</p></div>
-                                                <div className="text-right"><p className="text-2xl font-bold text-indigo-600">${goal.currentAmount.toLocaleString()}</p><p className="text-xs text-orange-500 font-medium">Faltan ${gap.toLocaleString()}</p></div>
+                                                <div className="flex-1 mr-4">
+                                                    
+                                                    {/* NOMBRE DE LA META O INPUT DE EDICIÓN */}
+                                                    {isEditing ? (
+                                                        <div className="flex gap-2 mb-1">
+                                                            <input 
+                                                                type="text" 
+                                                                autoFocus
+                                                                className="w-full text-sm border border-indigo-300 rounded px-2 py-1 outline-none"
+                                                                value={editingGoalName}
+                                                                onChange={e => setEditingGoalName(e.target.value)}
+                                                            />
+                                                            <button onClick={() => saveGoalName(goal.id)} className="text-emerald-600 text-xs font-bold bg-emerald-100 px-2 rounded">OK</button>
+                                                            <button onClick={() => setEditingGoalId(null)} className="text-gray-500 text-xs">X</button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2 group-hover:gap-3 transition-all">
+                                                            <h3 className="text-xl font-bold text-slate-800">{goal.name}</h3>
+                                                            {/* Botón Lápiz (Editar) */}
+                                                            <button 
+                                                                onClick={() => startEditingGoal(goal)} 
+                                                                className="text-gray-300 hover:text-indigo-500 transition-colors opacity-0 group-hover:opacity-100"
+                                                                title="Renombrar"
+                                                            >
+                                                                ✎
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <p className="text-sm text-slate-500">Meta: ${goal.targetAmount.toLocaleString()}</p>
+                                                </div>
+
+                                                <div className="text-right">
+                                                    <div className="flex justify-end items-center gap-2 mb-1">
+                                                        <p className="text-2xl font-bold text-indigo-600">${goal.currentAmount.toLocaleString()}</p>
+                                                        {/* Botón Basura (Eliminar) - Solo visible al pasar mouse */}
+                                                        {!isEditing && (
+                                                            <button 
+                                                                onClick={() => handleDeleteGoal(goal.id)}
+                                                                className="text-gray-300 hover:text-red-500 text-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                title="Eliminar Meta"
+                                                            >
+                                                                🗑️
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-orange-500 font-medium">Faltan ${gap.toLocaleString()}</p>
+                                                </div>
                                             </div>
                                             <ProgressBar current={goal.currentAmount} total={goal.targetAmount} />
                                             <div className="flex gap-3 items-center bg-gray-50 p-3 rounded-lg mt-6">
